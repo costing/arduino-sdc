@@ -25,6 +25,10 @@
  *    * These boards only have 3 timers, one for delay(), one for servos and the other one for either IR or buzzer, so
  *       you have to choose between being able to remote control it or buzz when the battery is low, cannot do both...
  *
+ *  Edison (x86 Intel)
+ *  ------------------
+ *    * IRremote and LiquidCrystal new are not x86-ready
+ *
  *  Constants and specs:
  *    > Mega board          : __AVR_ATmega2560__ (256KB of code available to the user, 8KB of RAM, 4KB EEPROM)
  *    > Micro board         : __AVR_ATmega32U4__ ( 28KB of code available to the user, 2.5KB of RAM, 1KB EEPROM)
@@ -37,8 +41,11 @@
 #define __DEBUG__
 
 //Uncomment the lines below if the respective equipment is connected
+#ifndef __ARDUINO_X86__
 #define LCD_CONNECTED
 #define IR_PIN 6
+#endif
+
 #define BATT_PIN A5
 #define TILT_PIN 7
 
