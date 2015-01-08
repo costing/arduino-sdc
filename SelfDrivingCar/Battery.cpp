@@ -65,4 +65,3 @@ float Battery::getGas(const bool average) {
 
   return 0;
 }
-

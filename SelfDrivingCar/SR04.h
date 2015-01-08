@@ -8,33 +8,50 @@ class SR04 {
   public:
     /**
      * Constructor, passing the two required pins. The respective direction (INPUT for echo, OUTPUT for trigger) is set by this code.
-     * echo: input pin, reading the distance from the nearest object
-     * trig: trigger pin, output pin triggering the measurement
+     * @param echo input pin, reading the distance from the nearest object
+     * @param trig trigger pin, output pin triggering the measurement
      */
-    SR04(const int echo, const int trig);
+    SR04(const unsigned short int echo, const unsigned short int trig);
 
     /**
-     * Trigger a measurement and return the distance to the nearest object
-     * @return distance to the nearest object in cm
+     * Trigger a measurement and return the distance to the nearest object, if positive.
+     * @return distance to the nearest object in cm. Zero or negative is a sign of error.
+     * @see setThreshold()
      */
-    int getRange();
+    signed int getRange();
 
     /**
-     * Take <code>count</code> measurements and return the average distance to the nearest object, in cm
+     * Take <code>count</code> measurements and return the average distance to the nearest object, in cm.
+     * Errors from the individual measurements are ignored (range values <= 0).
+     * @param count number of measurements
+     * @return distance to the nearest object as average of this many measurements
      */
-    int getRangeAvg(byte count);
+    int getRangeAvg(unsigned short int count);
+
+    /**
+     * Set the time threshold (in microseconds) for the reply. The pulse timeout will be set to this value.
+     * Moreover the return value of getRange() or getRangeAvg() will be cut to this threshold. Realistically speaking
+     * the sensor is not usable for more than 4m or so. As such the default threshold is set to 25000.
+     * Important: setting this value doesn't guarantee a response time from the sensor in any way!
+     * @param newThreshold new time threshold, in microseconds
+     */
+    void setThreshold(unsigned long newThreshold);
 
   private:
     /**
      * echo pin
      */
-    int echoPin;
+    unsigned short int echoPin;
 
     /**
      * trigger pin
      */
-    int trigPin;
+    unsigned short int trigPin;
+
+    /**
+     * Time threshold
+     */
+    unsigned long threshold = 25000;
 };
 
 #endif
-

@@ -43,21 +43,21 @@
 //Uncomment the lines below if the respective equipment is connected
 #ifndef __ARDUINO_X86__
 #define LCD_CONNECTED
-#define IR_PIN 6
+#define IR_PIN 2
 #endif
 
-#define BATT_PIN A5
-#define TILT_PIN 7
+#define BATT_PIN A3
+#define TILT_PIN 3
 
 #if defined(BATT_PIN) && ((not defined(IR_PIN)) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__))
 // only Mega and Micro support both the IR receiver and the tone() generator, Uno and Nano do not
-#define PIEZO_PIN 10
+#define PIEZO_PIN 6
 #endif
 
 // All conditional includes have to be commented out manually, because of the preprocessor bug in the Arduino IDE
 #if defined(LCD_CONNECTED)
 #include <Wire.h>
-// LCD is connected via the I2C bus (Nano board: SDA=D2, SCL=D3)
+// LCD is connected to the I2C bus (Uno/Nano board: SDA=A4, SCL=A5; Mega2560 board: SDA=20, SCL=21; Micro/Leonardo: SDA=2, SCL=3)
 #include <LiquidCrystal_I2C.h>
 #endif
 
@@ -74,12 +74,12 @@
 #include "SR04.h"
 
 // Analog pins
-#define STEERING_SERVO A0
-#define THROTTLE_SERVO A1
+#define STEERING_SERVO A6
+#define THROTTLE_SERVO A7
 #define SCANNING_SERVO A2
 
 // Front-facing range finder HC SR04 module
-SR04 frontRanger(A3, A4);
+SR04 frontRanger(4, 5);
 
 #if defined(BATT_PIN)
 // R1 = 10Kohm, R2 = 3.3Kohm
@@ -107,17 +107,7 @@ decode_results results;
 #endif
 
 #if defined(LCD_CONNECTED)
-#define I2C_ADDR    0x27  // Define I2C Address for controller
-#define BACKLIGHT_PIN  7
-#define En_pin  4
-#define Rw_pin  5
-#define Rs_pin  6
-#define D4_pin  0
-#define D5_pin  1
-#define D6_pin  2
-#define D7_pin  3
-
-LiquidCrystal_I2C lcd(I2C_ADDR, En_pin, Rw_pin, Rs_pin, D4_pin, D5_pin, D6_pin, D7_pin);
+LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
 #endif
 
 // Futaba S3003
@@ -143,7 +133,6 @@ void setup() {
 
 #if defined(LCD_CONNECTED)
   lcd.begin(16, 2);
-  lcd.setBacklightPin(BACKLIGHT_PIN, NEGATIVE);  // TODO: check which is the actual backlight pin, 7 is in some online code
   lcd.backlight();
   setLCD("Car booting");
 #endif
@@ -153,7 +142,7 @@ void setup() {
 #endif
 
 #if defined(TILT_PIN)
-  pinMode(TILT_PIN, INPUT);
+  pinMode(TILT_PIN, INPUT_PULLUP);
 #endif
 
   randomSeed(analogRead(A6));
@@ -253,11 +242,6 @@ void setLCD(const char* message) {
 }
 #endif
 
-#if defined(TILT_PIN)
-// flag set to <code>true</code> when the car is upside down
-boolean wasTurned = false;
-#endif
-
 #if defined(BATT_PIN) && defined(PIEZO_PIN)
 /**
  * Generate an alarm tone
@@ -308,13 +292,16 @@ boolean checkBattStatus() {
 #endif
 
 #if defined(TILT_PIN)
+// flag set to <code>true</code> when the car is upside down
+boolean wasTurned = false;
+
 /**
  * Check if the tilt sensor is triggered (car is turned over) and stop the car if so.
  *
  * @return <code>true</code> if the car can run or <code>false</code> if it was stopped and should not run
  */
 boolean checkTiltStatus() {
-  if (digitalRead(TILT_PIN) == HIGH) {
+  if (digitalRead(TILT_PIN) == LOW) {  // Using internal pullup resistor the value will be HIGH by default, LOW when the circuit is closed (tilted)
     if (!wasTurned) {
       // car is turned upside down, full stop
 
@@ -639,4 +626,3 @@ int8_t scanForOptions(const bool reverseIfStuck) {
 
   return bestOption;
 }
-
