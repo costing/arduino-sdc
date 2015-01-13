@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "SR04.h"
 
-SR04::SR04(const unsigned short int echo, const unsigned short int trig) {
+SR04::SR04(const int echo, const int trig) {
   this->echoPin = echo;
   this->trigPin = trig;
 
@@ -26,11 +26,11 @@ int SR04::getRange() {
   return duration / 58;
 }
 
-int SR04::getRangeAvg(unsigned short int count) {
+int SR04::getRangeAvg(const byte count) {
   long range = 0;
-  unsigned short int cnt = 0;
+  byte cnt = 0;
 
-  for (unsigned short int i = 0; i < count; i++) {
+  for (byte i = 0; i < count; i++) {
     const long newRange = getRange();
 
     if (newRange > 0) {
@@ -45,7 +45,7 @@ int SR04::getRangeAvg(unsigned short int count) {
   return (int) (range / cnt);
 }
 
-void SR04::setThreshold(unsigned long newThreshold) {
+void SR04::setThreshold(const unsigned long newThreshold) {
   this->threshold = newThreshold;
 }
 

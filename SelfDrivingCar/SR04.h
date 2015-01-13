@@ -11,7 +11,7 @@ class SR04 {
      * @param echo input pin, reading the distance from the nearest object
      * @param trig trigger pin, output pin triggering the measurement
      */
-    SR04(const unsigned short int echo, const unsigned short int trig);
+    SR04(const int echo, const int trig);
 
     /**
      * Trigger a measurement and return the distance to the nearest object, if positive.
@@ -26,7 +26,7 @@ class SR04 {
      * @param count number of measurements
      * @return distance to the nearest object as average of this many measurements
      */
-    int getRangeAvg(unsigned short int count);
+    int getRangeAvg(const byte count);
 
     /**
      * Set the time threshold (in microseconds) for the reply. The pulse timeout will be set to this value.
@@ -35,7 +35,7 @@ class SR04 {
      * Important: setting this value doesn't guarantee a response time from the sensor in any way!
      * @param newThreshold new time threshold, in microseconds
      */
-    void setThreshold(unsigned long newThreshold);
+    void setThreshold(const unsigned long newThreshold);
 
   private:
     /**

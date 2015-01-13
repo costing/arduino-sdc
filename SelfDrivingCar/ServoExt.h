@@ -2,7 +2,7 @@
 #define __ServoExth__
 
 #include <Servo.h>
-#include <inttypes.h>
+#include <Arduino.h>
 
 #ifndef REFRESH_INTERVAL
 // Intel Edison library doesn't have this constant
@@ -17,24 +17,24 @@ class ServoExt : public Servo
   public:
     /**
      * Constructor, passing the maximum travel angle and the time it takes to reach it
-     * @param maxAngle maximum angle that can be asked from this servo
+     * @param maxAngle maximum angle (reference to center) that can be asked from this servo
      * @param travelTime time in milliseconds to reach the maximum angle, starting from the middle point
      */
-    ServoExt(const unsigned short int maxAngle, const unsigned short int travelTime);
+    ServoExt(const byte maxAngle, const int travelTime);
 
     /**
      * Set a percentage of travel relative to the center, eg [-100, 100]
      * @param percentage percentage of travel to set
      * @param waitToStabilize whether or not to wait for the expected time of the servo to reach the destination
      */
-    void setPercentage(const unsigned short int percentage, const bool waitToStabilize = false);
+    void setPercentage(const int percentage, const bool waitToStabilize = false);
 
     /**
      * Set the desired angle relative to the center, eg [-90, 90]. It will automatically apply the constructor-set boundary
      * @param angle desired angle
      * @param waitToStabilize whether or not to wait for the expected time of the servo to reach the destination
      */
-    void setAngle(unsigned short int angle, const bool waitToStabilize = false);
+    void setAngle(byte angle, const bool waitToStabilize = false);
 
     /**
      * Wait long enough for the servo to reach the point of the last operation (called with waitToStabilize = false)
@@ -44,7 +44,7 @@ class ServoExt : public Servo
     /**
      * Get the angle last set by one of the above operations
      */
-    unsigned short int getAngle();
+    byte getAngle();
 
   private:
     unsigned short int maxAngle;

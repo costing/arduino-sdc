@@ -6,9 +6,11 @@
  *
  * Libraries:
  *   > LiquidCrystal new: https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
- *      Install it in ~/Arduino to override the IDE one
+ *      Install it in ~/Arduino/libraries/ to override the IDE one
+ *   > TimerOne: https://github.com/PaulStoffregen/TimerOne
+ *      To be added to ~/Arduino/libraries/ as well
  *   > IRremote: http://github.com/shirriff/Arduino-IRremote
- *      remove IDE's libraries/RobotIRremote and add this one to ~/Arduino instead
+ *      remove IDE's libraries/RobotIRremote and add this one to ~/Arduino/libraries instead
  *
  * Board-specific tweaks:
  *   Mega (ATmega2560)
@@ -34,7 +36,7 @@
  *    > Micro board         : __AVR_ATmega32U4__ ( 28KB of code available to the user, 2.5KB of RAM, 1KB EEPROM)
  *    > Uno and Nano boards : __AVR_ATmega328P__ ( 31.5KB Uno / 30KB Nano of code available to the user, 2KB of RAM, 1KB EEPROM)
  */
-#include <inttypes.h>
+#include <TimerOne.h>
 
 // Whether or not to use the Serial as debugging tool
 // Bluetooth to Serial dongle can be connected on pins D0 (TX -> dongle RX) and D1 (RX -> dongle TX) to help with remote debugging
@@ -126,7 +128,7 @@ ServoExt scanningServo(75, 175);
 /**
  * Set up the board pins and initialize the available hardware, as per the defined options above
  */
-void setup() {
+void setup() {  
 #if defined(__DEBUG__)
   Serial.begin(9600);
 #endif
@@ -168,6 +170,9 @@ void setup() {
 #endif
 
   lookAround();
+  
+  Timer1.initialize(50000);  // call the driver() function every 50ms
+  Timer1.attachInterrupt(driver);
 }
 
 /**
@@ -186,17 +191,17 @@ void fullStop() {
 /**
  * <code>true</code> if the car was going forward and should first brake before reversing
  */
-boolean wasForward = false;
+volatile boolean wasForward = false;
 
 /**
  * Updated with the last moment when the car was set to go forward
  */
-unsigned long int runningSince = 0;
+volatile unsigned long int runningSince = 0;
 
 /**
  * Estimated running speed set by the last command, in cm/s
  */
-int runningSpeed;
+volatile int runningSpeed;
 
 /**
  * Tell the car to go forward (throttle > 0), backwards (throttle < 0) or stop (throttle=0).
@@ -204,7 +209,7 @@ int runningSpeed;
  * @param throttle percentage of throttle to ask for, in the range [-100, 100]
  */
 void goForward(const int throttle) {
-  if (throttle <= 0 && wasForward) {
+  if (throttle <= 0 && wasForward) {    
     // simulate a braking
     throttleServo.write(75);
     // TODO: consider for how long to brake, function of the estimated current speed
@@ -212,14 +217,15 @@ void goForward(const int throttle) {
     // back to neutral
     throttleServo.write(90);
     delay(50);
+    
+    runningSince = 0;
+    runningSpeed = 0;
   }
 
   throttleServo.setPercentage(throttle, false);
 
   if (throttle < 0) {
     wasForward = false;
-    runningSince = 0;
-    runningSpeed = 0;
   }
   else if (throttle > 0) {
     runningSince = millis();
@@ -293,7 +299,7 @@ boolean checkBattStatus() {
 
 #if defined(TILT_PIN)
 // flag set to <code>true</code> when the car is upside down
-boolean wasTurned = false;
+volatile boolean wasTurned = false;
 
 /**
  * Check if the tilt sensor is triggered (car is turned over) and stop the car if so.
@@ -343,7 +349,7 @@ boolean checkTiltStatus() {
 #endif
 
 #if defined(IR_PIN)
-byte remoteState = CAR_RUN;
+volatile byte remoteState = CAR_RUN;
 
 /**
  * Check if the STOP command was received. If it was received (now or in previous iterations) then do a full stop.
@@ -385,7 +391,8 @@ boolean checkIRStatus() {
 }
 #endif
 
-byte scanDir = 1;
+// signed
+char scanDir = 1;
 
 // initial angle = (index+1) * 15 degrees
 // min angle = 15
@@ -393,12 +400,12 @@ byte scanDir = 1;
 #define SCAN_ANGLES 11
 #define SCAN_ANGLE_INCREMENT 15
 
-unsigned int distanceAtAngle[SCAN_ANGLES];
+volatile unsigned int distanceAtAngle[SCAN_ANGLES];
 // actual angle of the distance, updated as the car travels
-float angle[SCAN_ANGLES];
+volatile float angle[SCAN_ANGLES];
 
 // angle at which the car currently travels
-int8_t runningAngle = 90;
+volatile byte runningAngle = 90;
 
 /**
  * After a critical event clear the distance vectors to force a full update
@@ -410,8 +417,74 @@ void clearDistanceVectors() {
   }
 }
 
+volatile boolean scanning = false;
+
 /**
- * Main loop
+ * This is the car driver code. It is called every 50ms to decide what to do next.
+ */
+void driver(){
+  if (digitalRead(TILT_PIN) == LOW){
+    wasTurned = true;
+  }
+  
+  if (wasTurned || remoteState == CAR_STOP || scanning){
+    goForward(0);
+    steeringServo.setAngle(90, false);
+    return;
+  }
+  
+    // update distance array and angles of previously known objects function of how much and in which direction the car has travelled to them
+  if (runningSince > 0) {
+    const long travelled = (runningSpeed * (millis() - runningSince)) / 1000;
+
+    for (byte i = 0; i < SCAN_ANGLES; i++) {
+      const byte angleDiff = abs(angle[i] - runningAngle);
+
+      const float z = distanceAtAngle[i] * cos(angleDiff / PI);
+
+      if (z < travelled) {
+        distanceAtAngle[i] = 0;
+        continue;
+      }
+
+      const float y = distanceAtAngle[i] * sin(angleDiff / PI);
+
+      distanceAtAngle[i] = (int) sqrt( (z - travelled) * (z - travelled) + y * y );
+
+      const float newAngle = asin(y / distanceAtAngle[i]) * PI;
+
+      if (angle[i] < runningAngle)
+        angle[i] = runningAngle - newAngle;
+      else
+        angle[i] = runningAngle + newAngle;
+    }
+  }
+  
+  unsigned int bestDistance = 0;
+  byte bestAngle = 0;
+
+  for (byte i = 0; i < SCAN_ANGLES; i++) {
+    if (distanceAtAngle[i] > bestDistance) {
+      bestDistance = distanceAtAngle[i];
+      bestAngle = i;
+    }
+  }
+
+  if (bestDistance >= 60) {
+    // go in that direction
+    steeringServo.setAngle(angle[bestAngle], false);
+
+    // if the obstacle is at 2.5m or more, go full blast
+    // otherwise slow down with the square root of the distance
+    // absolute throttle max is 40% of the top speed, 20% is the minimum for the car to go forward at all
+    const long fwSpeed =  20 + min(20, sqrt(bestDistance));
+
+    goForward(fwSpeed);
+  }
+}
+
+/**
+ * Main loop, waiting patiently for the ultrasound sensor to turn and get the range.
  */
 void loop() {
 #if defined(BATT_PIN)
@@ -435,7 +508,7 @@ void loop() {
 #endif
 
   // continue from where the scanning servo was sitting last
-  int8_t newScanAngle = scanningServo.getAngle();
+  byte newScanAngle = scanningServo.getAngle();
 
   if (newScanAngle >= 120)
     newScanAngle = 120 - SCAN_ANGLE_INCREMENT;
@@ -460,57 +533,39 @@ void loop() {
   Serial.println(distance);
 #endif
 
-  // update distance array and angles of previously known objects function of how much and in which direction the car has travelled to them
-  if (runningSince > 0) {
-    const long travelled = (runningSpeed * (millis() - runningSince)) / 1000;
+  int bestDistance = 0;
+  byte bestAngle = 0;
 
-    for (byte i = 0; i < SCAN_ANGLES; i++) {
-      const byte angleDiff = abs(angle[i] - runningAngle);
-
-      const float z = distanceAtAngle[i] * cos(angleDiff / PI);
-
-      if (z < travelled) {
-        distanceAtAngle[i] = -1;
-        continue;
-      }
-
-      const float y = distanceAtAngle[i] * sin(angleDiff / PI);
-
-      distanceAtAngle[i] = (int) sqrt( (z - travelled) * (z - travelled) + y * y );
-
-      const float newAngle = asin(y / distanceAtAngle[i]) * PI;
-
-      if (angle[i] < runningAngle)
-        angle[i] = runningAngle - newAngle;
-      else
-        angle[i] = runningAngle + newAngle;
-    }
-  }
-
+  noInterrupts();
+  // ***************** Uninterrupted sequence **************************
   distanceAtAngle[(newScanAngle / SCAN_ANGLE_INCREMENT) - 1] = distance;
   angle[(newScanAngle / SCAN_ANGLE_INCREMENT) - 1] = newScanAngle;
-
-  int bestDistance = 0;
-  int bestAngle = 0;
-
-  for (int8_t i = 0; i < SCAN_ANGLES; i++) {
+ 
+  for (byte i = 0; i < SCAN_ANGLES; i++) {
     if (distanceAtAngle[i] > bestDistance) {
       bestDistance = distanceAtAngle[i];
       bestAngle = i;
     }
   }
+  
+  if (bestDistance < 60)
+    scanning = true;
+  // *********************************************************************
+  interrupts();
 
-  if (bestDistance < 60) {
+
+  if (scanning) {
     // at 60cm from an obstacle stop and scan for alternative routes
+    fullStop();
 
 #if defined(LCD_CONNECTED)
     setLCD("Collision alert");
 #endif
 
-    for (int i = 0; i < 6; i++) {
-      const int8_t idx = scanForOptions(i % 2 == 0);
+    for (byte i = 0; i < 6; i++) {
+      const byte idx = scanForOptions(i % 2 == 0);
 
-      if (idx >= 0 && distanceAtAngle[idx] >= 60) {
+      if (idx < SCAN_ANGLES) {
         bestDistance = distanceAtAngle[idx];
         bestAngle = idx;
         break;
@@ -524,6 +579,10 @@ void loop() {
     }
   }
 
+  noInterrupts();
+  scanning = false;
+  interrupts();
+
 #if defined(LCD_CONNECTED)
   if (wasCleared) {
     setLCD("Distance: ");
@@ -536,25 +595,14 @@ void loop() {
   lcd.print(angle[bestAngle]);
   lcd.print("deg");
 #endif
-
-  // go in that direction
-  steeringServo.write(angle[bestAngle]);
-
-  // if the obstacle is at 2.5m or more, go full blast
-  // otherwise slow down with the square root of the distance
-  // absolute throttle max is 40% of the top speed, 20% is the minimum for the car to go forward at all
-  const long fwSpeed =  20 + min(20, sqrt(distance));
-
-  goForward(fwSpeed);
-
 }
 
 /**
  * Scan for options at all available angles
  *
- * @return position of the best direction to go in (index in the distance[] and angle[] arrays) or -1 if there is no viable option
+ * @return position of the best direction to go in (index in the distance[] and angle[] arrays) or SCAN_ANGLES if no viable option is found
  */
-int8_t lookAround() {
+byte lookAround() {
 #if defined(__DEBUG__)
   const unsigned long startTime = millis();
 #endif
@@ -562,16 +610,16 @@ int8_t lookAround() {
   const bool asc = scanningServo.getAngle() <= 90;
 
   int largestDistance = 0;
-  int8_t bestAngle = -1;
+  byte bestAngle = SCAN_ANGLES;
 
   for (byte j = 0; j < SCAN_ANGLES; j++) {
-    const int8_t i = asc ? j : 10 - j;
+    const byte i = asc ? j : 10 - j;
 
-    const int8_t scanAngle = (i + 1) * SCAN_ANGLE_INCREMENT;
+    const byte scanAngle = (i + 1) * SCAN_ANGLE_INCREMENT;
 
     scanningServo.setAngle(scanAngle, true);
 
-    const int distance = frontRanger.getRangeAvg(2);
+    const int distance = frontRanger.getRangeAvg(3);
 
     distanceAtAngle[i] = distance;
     angle[i] = scanAngle;
@@ -595,12 +643,10 @@ int8_t lookAround() {
  * Scan for options and try to get out of a stuck state by going either forward or backwards (function of the reverseIfStuck parameter)
  * and at a random angle.
  *
- * @return a non-negative index in the distanceAtAngle[] and angle[] arrays, or -1 if there is no viable option at the moment
+ * @return the index in the distanceAtAngle[] and angle[] arrays, or SCAN_ANGLES if there is no viable option at the moment
  */
-int8_t scanForOptions(const bool reverseIfStuck) {
-  goForward(0);
-
-  const int8_t bestOption = lookAround();
+byte scanForOptions(const bool reverseIfStuck) {
+  const byte bestOption = lookAround();
 
 #if defined(__DEBUG__)
   if (bestOption > 0) {
@@ -612,7 +658,7 @@ int8_t scanForOptions(const bool reverseIfStuck) {
   Serial.println();
 #endif
 
-  if (bestOption < 0 || distanceAtAngle[bestOption] < 60) {
+  if (bestOption == SCAN_ANGLES || distanceAtAngle[bestOption] < 60) {
     // try going back (or forward) a bit, in a random angle
     steeringServo.setPercentage(random(0, 201) - 100, true);
 
