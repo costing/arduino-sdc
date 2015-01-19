@@ -13,13 +13,21 @@ SR04::SR04(const int echo, const int trig) {
 }
 
 int SR04::getRange() {
+  const unsigned long t = millis();
+  
+  if (t < lastMeasurement){
+    delay(lastMeasurement - t);
+  }
+  
   long duration;
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(5);
   digitalWrite(trigPin, LOW);
 
   duration = pulseIn(echoPin, HIGH, threshold);
-
+  
+  lastMeasurement = millis() + 100;  // don't do pings more often than this
+  
   if (duration > threshold)
     return 0;
 

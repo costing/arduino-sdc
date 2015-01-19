@@ -52,6 +52,11 @@ class SR04 {
      * Time threshold
      */
     unsigned long threshold = 25000;
+
+    /**
+     * Record time of last measurement and don't peform them more often than 50ms
+     */    
+    unsigned long lastMeasurement = 0;
 };
 
 #endif

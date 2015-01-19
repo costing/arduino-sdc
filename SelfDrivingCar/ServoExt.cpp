@@ -33,6 +33,11 @@ void ServoExt::setAngle(byte angle, const bool waitToStabilize) {
 
   const long wait = REFRESH_INTERVAL / 1000 + (diff * this->travelTime) / this->maxAngle;
 
+//  if (wait>100){
+//    Serial.print("Waiting for ");
+//    Serial.println(wait);
+//  }
+
   oldAngle = prevAngle;
   prevAngle = angle;
 
@@ -50,8 +55,9 @@ void ServoExt::setPercentage(const int percentage, const bool waitToStabilize) {
 }
 
 void ServoExt::waitForAngle() {
-  if (toStabilize < millis())
-    delay(millis() - toStabilize);
+  const unsigned long t = millis();
+  if (toStabilize > t)
+    delay(toStabilize - t);
 }
 
 byte ServoExt::getAngle() {

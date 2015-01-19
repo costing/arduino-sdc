@@ -4,11 +4,9 @@
  * Pre-requisits
  * ***************
  *
- * Libraries:
+ * Libraries (Optional):
  *   > LiquidCrystal new: https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
  *      Install it in ~/Arduino/libraries/ to override the IDE one
- *   > TimerOne: https://github.com/PaulStoffregen/TimerOne
- *      To be added to ~/Arduino/libraries/ as well
  *   > IRremote: http://github.com/shirriff/Arduino-IRremote
  *      remove IDE's libraries/RobotIRremote and add this one to ~/Arduino/libraries instead
  *
@@ -36,7 +34,6 @@
  *    > Micro board         : __AVR_ATmega32U4__ ( 28KB of code available to the user, 2.5KB of RAM, 1KB EEPROM)
  *    > Uno and Nano boards : __AVR_ATmega328P__ ( 31.5KB Uno / 30KB Nano of code available to the user, 2KB of RAM, 1KB EEPROM)
  */
-#include <TimerOne.h>
 
 // Whether or not to use the Serial as debugging tool
 // Bluetooth to Serial dongle can be connected on pins D0 (TX -> dongle RX) and D1 (RX -> dongle TX) to help with remote debugging
@@ -44,27 +41,27 @@
 
 //Uncomment the lines below if the respective equipment is connected
 #ifndef __ARDUINO_X86__
-#define LCD_CONNECTED
-#define IR_PIN 2
+//#define LCD_CONNECTED
+// #define IR_PIN 2
 #endif
 
-#define BATT_PIN A3
-#define TILT_PIN 3
+// #define BATT_PIN A3
+// #define TILT_PIN 3
 
 #if defined(BATT_PIN) && ((not defined(IR_PIN)) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__))
 // only Mega and Micro support both the IR receiver and the tone() generator, Uno and Nano do not
-#define PIEZO_PIN 6
+// #define PIEZO_PIN 6
 #endif
 
 // All conditional includes have to be commented out manually, because of the preprocessor bug in the Arduino IDE
 #if defined(LCD_CONNECTED)
-#include <Wire.h>
+//#include <Wire.h>
 // LCD is connected to the I2C bus (Uno/Nano board: SDA=A4, SCL=A5; Mega2560 board: SDA=20, SCL=21; Micro/Leonardo: SDA=2, SCL=3)
-#include <LiquidCrystal_I2C.h>
+//#include <LiquidCrystal_I2C.h>
 #endif
 
 #if defined(IR_PIN)
-#include <IRremote.h>
+//#include <IRremote.h>
 #endif
 
 #if defined(BATT_PIN)
@@ -76,8 +73,8 @@
 #include "SR04.h"
 
 // Analog pins
-#define STEERING_SERVO A6
-#define THROTTLE_SERVO A7
+#define STEERING_SERVO A0
+#define THROTTLE_SERVO A1
 #define SCANNING_SERVO A2
 
 // Front-facing range finder HC SR04 module
@@ -117,20 +114,34 @@ LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
 // Time to reach the above max travel, doc says 230ms for 60&deg; at 4.8V (no load!)
 ServoExt steeringServo(30, 200);
 
-// Tamiya ESC, 100% of the remote control travel is 30&deg;, time to accelerate to full speed is 3s (?)
+// Tamiya ESC, 100% of the remote control travel is 30&deg;
 ServoExt throttleServo(30, 3000);
+
+// car top speed, in cm/s
+// TT-01 specs give a top speed of 29km/h at full throttle with 2S LiPo. That is 800cm/s.
+#define CAR_TOP_SPEED 200
 
 // Kit: TowerPro 9g SG90
 // Current: Turnigy TGY-930, it can travel max to 75&deg;
 // Time to reach max travel, doc says 140ms for 60&deg; at 4.8V, so 175ms at 75&deg;
 ServoExt scanningServo(75, 175);
 
+void debug(String message) {
+#if defined(__DEBUG__)
+  Serial.print(millis() / 1000);
+  Serial.print(" : ");
+  Serial.println(message);
+#endif
+}
+
 /**
  * Set up the board pins and initialize the available hardware, as per the defined options above
  */
-void setup() {  
+void setup() {
 #if defined(__DEBUG__)
-  Serial.begin(9600);
+  Serial.begin(115200);
+
+  delay(5000);
 #endif
 
 #if defined(LCD_CONNECTED)
@@ -154,7 +165,7 @@ void setup() {
   // attach the servos, also setting the pin mode
   steeringServo.attach(STEERING_SERVO);
   throttleServo.attach(THROTTLE_SERVO);
-  scanningServo.attach(SCANNING_SERVO);
+  scanningServo.attach(SCANNING_SERVO, 600, 2225);
 
   fullStop();
 
@@ -169,10 +180,12 @@ void setup() {
   setLCD("Opening eyes");
 #endif
 
+  steeringServo.setAngle(90);
+
   lookAround();
-  
-  Timer1.initialize(50000);  // call the driver() function every 50ms
-  Timer1.attachInterrupt(driver);
+
+  //  Timer1.initialize(50000);  // call the driver() function every 50ms
+  //  Timer1.attachInterrupt(driver);
 }
 
 /**
@@ -209,7 +222,7 @@ volatile int runningSpeed;
  * @param throttle percentage of throttle to ask for, in the range [-100, 100]
  */
 void goForward(const int throttle) {
-  if (throttle <= 0 && wasForward) {    
+  if (throttle <= 0 && wasForward) {
     // simulate a braking
     throttleServo.write(75);
     // TODO: consider for how long to brake, function of the estimated current speed
@@ -217,7 +230,7 @@ void goForward(const int throttle) {
     // back to neutral
     throttleServo.write(90);
     delay(50);
-    
+
     runningSince = 0;
     runningSpeed = 0;
   }
@@ -229,7 +242,8 @@ void goForward(const int throttle) {
   }
   else if (throttle > 0) {
     runningSince = millis();
-    runningSpeed = throttle * 8;  // 29km/h at full throttle, that is 800cm/s(throttle is in %)
+    runningSpeed = throttle * CAR_TOP_SPEED / 100;
+    wasForward = true;
   }
 }
 
@@ -417,76 +431,147 @@ void clearDistanceVectors() {
   }
 }
 
-volatile boolean scanning = false;
+void dumpDistance() {
+#if defined(__DEBUG__)
+  Serial.print("[Distance, Angle] = ");
+
+  for (byte i = 0; i < SCAN_ANGLES; i++) {
+    Serial.print("[");
+    Serial.print(distanceAtAngle[i]);
+    Serial.print(", ");
+    Serial.print(angle[i]);
+    Serial.print("] ");
+  }
+
+  Serial.println();
+#endif
+}
 
 /**
  * This is the car driver code. It is called every 50ms to decide what to do next.
  */
-void driver(){
-  if (digitalRead(TILT_PIN) == LOW){
+boolean driver() {
+#if defined(TILT_PIN)
+  if (digitalRead(TILT_PIN) == LOW) {
     wasTurned = true;
   }
-  
-  if (wasTurned || remoteState == CAR_STOP || scanning){
+#endif
+
+#if defined(IR_PIN)
+  if (wasTurned || remoteState == CAR_STOP || scanning) {
     goForward(0);
     steeringServo.setAngle(90, false);
-    return;
+    return false;
   }
-  
-    // update distance array and angles of previously known objects function of how much and in which direction the car has travelled to them
-  if (runningSince > 0) {
-    const long travelled = (runningSpeed * (millis() - runningSince)) / 1000;
+#endif
 
-    for (byte i = 0; i < SCAN_ANGLES; i++) {
-      const byte angleDiff = abs(angle[i] - runningAngle);
+#if defined(__DEBUG__)
+  Serial.print("After having travelled since ");
+  Serial.print(runningSince);
+  Serial.print(" ms (for ");
+  Serial.print(millis() - runningSince);
+  Serial.print(" ms) at ");
+  Serial.print(runningSpeed);
+  Serial.println(" cm/s");
+  dumpDistance();
+#endif
 
-      const float z = distanceAtAngle[i] * cos(angleDiff / PI);
-
-      if (z < travelled) {
-        distanceAtAngle[i] = 0;
-        continue;
-      }
-
-      const float y = distanceAtAngle[i] * sin(angleDiff / PI);
-
-      distanceAtAngle[i] = (int) sqrt( (z - travelled) * (z - travelled) + y * y );
-
-      const float newAngle = asin(y / distanceAtAngle[i]) * PI;
-
-      if (angle[i] < runningAngle)
-        angle[i] = runningAngle - newAngle;
-      else
-        angle[i] = runningAngle + newAngle;
-    }
-  }
-  
   unsigned int bestDistance = 0;
   byte bestAngle = 0;
 
-  for (byte i = 0; i < SCAN_ANGLES; i++) {
-    if (distanceAtAngle[i] > bestDistance) {
-      bestDistance = distanceAtAngle[i];
-      bestAngle = i;
+  // update distance array and angles of previously known objects function of how much and in which direction the car has travelled to them
+  if (runningSince > 0) {
+    const long travelled = (runningSpeed * (millis() - runningSince)) / 1000;
+
+#if defined(__DEBUG__)
+    Serial.print("Travelled: ");
+    Serial.print(travelled);
+    Serial.println(" ");
+#endif
+
+    for (byte i = 0; i < SCAN_ANGLES; i++) {
+      const byte angleDiff = angle[i] > runningAngle ? angle[i] - runningAngle : runningAngle - angle[i];
+
+      const float z = distanceAtAngle[i] * cos(angleDiff * PI / 180);
+
+      if (z <= travelled) {
+        distanceAtAngle[i] = 0;
+        angle[i] = 0;
+        continue;
+      }
+
+      const float y = distanceAtAngle[i] * sin(angleDiff * PI / 180);
+
+      const float q = sqrt( (z - travelled) * (z - travelled) + y * y );
+
+      distanceAtAngle[i] = round(q);
+
+      const float newAngle = asin(y / q) * 180 / PI;
+
+      if (angle[i] < runningAngle)
+        angle[i] = 90 - newAngle;
+      else
+        angle[i] = 90 + newAngle;
+
+      if (distanceAtAngle[i] > bestDistance) {
+        bestDistance = distanceAtAngle[i];
+        bestAngle = i;
+      }
+    }
+  }
+  else {
+    for (byte i = 0; i < SCAN_ANGLES; i++) {
+      if (distanceAtAngle[i] > bestDistance) {
+        bestDistance = distanceAtAngle[i];
+        bestAngle = i;
+      }
     }
   }
 
+#if defined(__DEBUG__)
+  Serial.println("After recomputing the distances:");
+  dumpDistance();
+#endif
+
   if (bestDistance >= 60) {
     // go in that direction
-    steeringServo.setAngle(angle[bestAngle], false);
+    runningAngle = angle[bestAngle];
+    steeringServo.setAngle(runningAngle, false);
 
     // if the obstacle is at 2.5m or more, go full blast
     // otherwise slow down with the square root of the distance
     // absolute throttle max is 40% of the top speed, 20% is the minimum for the car to go forward at all
     const long fwSpeed =  20 + min(20, sqrt(bestDistance));
 
+#if defined(__DEBUG__)
+    Serial.print("Going towards ");
+    Serial.print(angle[bestAngle]);
+    Serial.print(" at ");
+    Serial.print(fwSpeed);
+    Serial.println("% throttle");
+#endif
+
     goForward(fwSpeed);
   }
+  else {
+#if defined(__DEBUG__)
+    Serial.println("Driver didn't have any option");
+#endif
+
+    return false;
+  }
+
+  return true;
 }
 
 /**
  * Main loop, waiting patiently for the ultrasound sensor to turn and get the range.
  */
 void loop() {
+  debug("1. enter loop");
+  driver();
+  debug("2. called driver");
+
 #if defined(BATT_PIN)
   if (!checkBattStatus()) {
     delay(1000);
@@ -524,7 +609,11 @@ void loop() {
 
   scanningServo.setAngle(newScanAngle, true);
 
-  const long distance = frontRanger.getRangeAvg(2);  // do we really need to average measurements, or one is enough ?
+  debug("3. set scanning angle");
+
+  const long distance = frontRanger.getRange();
+
+  debug("4. got range");
 
 #if defined(__DEBUG__)
   Serial.print("Range to the object at ");
@@ -536,25 +625,21 @@ void loop() {
   int bestDistance = 0;
   byte bestAngle = 0;
 
-  noInterrupts();
-  // ***************** Uninterrupted sequence **************************
   distanceAtAngle[(newScanAngle / SCAN_ANGLE_INCREMENT) - 1] = distance;
   angle[(newScanAngle / SCAN_ANGLE_INCREMENT) - 1] = newScanAngle;
- 
+
   for (byte i = 0; i < SCAN_ANGLES; i++) {
     if (distanceAtAngle[i] > bestDistance) {
       bestDistance = distanceAtAngle[i];
       bestAngle = i;
     }
   }
-  
-  if (bestDistance < 60)
-    scanning = true;
-  // *********************************************************************
-  interrupts();
 
+  debug("5. got best direction");
 
-  if (scanning) {
+  if (bestDistance < 60) {
+    debug("5.1. Collision alert");
+
     // at 60cm from an obstacle stop and scan for alternative routes
     fullStop();
 
@@ -574,14 +659,14 @@ void loop() {
 
     if (bestDistance < 60) {
       // still didn't find a way out, give the user a chance to put the car back in some open space
+      debug("Waiting 5 seconds for human intervention");
+
       delay(5000);
       return;
     }
   }
 
-  noInterrupts();
-  scanning = false;
-  interrupts();
+  debug("6. cleaning up");
 
 #if defined(LCD_CONNECTED)
   if (wasCleared) {
@@ -617,9 +702,10 @@ byte lookAround() {
 
     const byte scanAngle = (i + 1) * SCAN_ANGLE_INCREMENT;
 
+    steeringServo.setAngle(scanAngle);
     scanningServo.setAngle(scanAngle, true);
 
-    const int distance = frontRanger.getRangeAvg(3);
+    const int distance = frontRanger.getRange();
 
     distanceAtAngle[i] = distance;
     angle[i] = scanAngle;
@@ -634,6 +720,13 @@ byte lookAround() {
   Serial.print("lookAround() took ");
   Serial.print(millis() - startTime);
   Serial.println("ms");
+
+  Serial.print("Best distance: ");
+  Serial.print(largestDistance);
+  Serial.print(" at angle ");
+  Serial.print(bestAngle);
+  Serial.print(" - ");
+  Serial.println(angle[bestAngle]);
 #endif
 
   return bestAngle;
