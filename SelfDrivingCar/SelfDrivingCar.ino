@@ -41,7 +41,7 @@
 
 //Uncomment the lines below if the respective equipment is connected
 #ifndef __ARDUINO_X86__
-//#define LCD_CONNECTED
+// #define LCD_CONNECTED
 // #define IR_PIN 2
 #endif
 
@@ -76,9 +76,16 @@
 #define STEERING_SERVO A0
 #define THROTTLE_SERVO A1
 #define SCANNING_SERVO A2
+#define IR_RANGE A6
 
 // Front-facing range finder HC SR04 module
 SR04 frontRanger(4, 5);
+
+#if defined(IR_RANGE)
+#include "Sharp.h"
+
+Sharp irRanger(IR_RANGE);
+#endif
 
 #if defined(BATT_PIN)
 // R1 = 10Kohm, R2 = 3.3Kohm
@@ -199,6 +206,31 @@ void fullStop() {
   steeringServo.setAngle(90, true);
 
   throttleServo.waitForAngle();
+}
+
+/**
+ * Get the range to the nearest object using the available sensors
+ * @return range to object in cm, zero or negative if the range cannot be determined
+ */
+int getRange(){
+#if defined(IR_RANGE)
+  const int range = irRanger.getRange();
+  
+  if (range<150)
+    return range;
+  
+  const int sonicRange = frontRanger.getRange();
+  
+  if (sonicRange==0)
+    return range;
+  
+  if (sonicRange>=150)
+    return sonicRange;
+  
+  return min(sonicRange, range);
+#else
+  return frontRanger.getRange();
+#endif
 }
 
 /**
@@ -611,7 +643,7 @@ void loop() {
 
   debug("3. set scanning angle");
 
-  const long distance = frontRanger.getRange();
+  const long distance = getRange();
 
   debug("4. got range");
 
@@ -705,7 +737,7 @@ byte lookAround() {
     steeringServo.setAngle(scanAngle);
     scanningServo.setAngle(scanAngle, true);
 
-    const int distance = frontRanger.getRange();
+    const int distance = getRange();
 
     distanceAtAngle[i] = distance;
     angle[i] = scanAngle;
